@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="utf-8">
@@ -10,6 +10,7 @@ body {
 	}
 h1 {
 	font-size: 1.5em;
+	margin-top: 0;
 	}
 h2 {
 	font-size: 1.2em;
@@ -18,6 +19,7 @@ button {
 	margin-right: 1em;
 	margin-bottom: 1em;
 	padding: 0.5em 0.8em;
+	font-weight: 700;
 	}
 #status {
 	padding: 1em;
@@ -46,18 +48,96 @@ button {
 	border: 1px solid #444444;
 	padding: 0.5em;
 	}
+#tableResults td:nth-child(3),
+#tableResults td:nth-child(5),
+#tableResults td:nth-child(7) {
+	text-align: center;
+	}
+ 
+#tableResults tr.hasvalue td {
+	font-weight: 700;
+/*color: #CC0000;*/
+	}
+#timer {
+	font-size: 2em;
+	width: 8em;
+	text-align: center;
+	margin-top: 2em;
+	}
+.timer-number {
+	font-size: 3em;
+	}
+.small-normal {
+	font-weight: 400;
+	font-size: 0.8em;
+	margin-right: 1em;
+	}
+pre code {
+	font-family: Arial;
+	}
+#status {
+	display: none;
+    padding: 1em;
+    color: #FFFFFF;
+    background-color: #000;
+    width: 38.5em;
+    font-weight: 700;
+}
+#status.inserting {
+	color: #ccff66;
+	}
+#status.analyzing {
+	color: cyan;
+}
+#status.results {
+	color: #00FFFF;
+	}
+.testing {
+	font-size: 0.8em;
+	}
 </style>
 	<script src="xfConnect.js"></script>
 <script>
+var
+	timerCounter = 0;
 
+function clearDiv( id ) {
+	document.getElementById( id ).innerHTML= '';
+}
+function setDiv( id, value ) {
+	document.getElementById( id ).innerHTML= value;
+}
+function hideDiv( id ) {
+	document.getElementById( id ).style.display = 'none';
+}
+function showDiv( id ) {
+	document.getElementById( id ).style.display = 'block';
+}
+function setClassName ( id, value ) {
+	document.getElementById( id ).className = value;
+}
 function clearErrors() {
-	document.getElementById('responseErrorContainer').innerHTML= '';
+	clearDiv( 'responseErrorContainer' );
 }
 function clearResponse() {
-	document.getElementById('response').innerHTML = '';
+	clearDiv( 'response' );
 }
 function showSystemMode( s ) {
-	document.getElementById('status').innerHTML= s;
+	switch (s) {
+		case "InsertingShuttle":
+			setClassName( 'status', 'inserting' );	
+			break;
+		case "Analyzing":
+			setClassName( 'status', 'analyzing' );	
+			break;
+		case "Results":
+			setClassName( 'status', 'results' );	
+			break;
+		default:
+			setClassName( 'status', '' );	
+	} 
+	setDiv( 'status', '<span class="small-normal">System Mode</span> ' + s );
+	showDiv( 'status' );
 }
 
 function showResponse( prefix, json) {
@@ -65,13 +145,51 @@ function showResponse( prefix, json) {
 		 showSystemMode ( json.systemMode )
 	else
 		 showSystemMode ( '');
-	document.getElementById('response').innerHTML = prefix + JSON.stringify( json, null, 2 );
+	setDiv( 'response', prefix + JSON.stringify( json, null, 2 ) );
 	clearErrors();
 }
 
 function showErrors( s ) {
-	document.getElementById('responseErrorContainer').innerHTML= s;
+	setDiv( 'responseErrorContainer', s );
 	clearResponse();
+	hideDiv( 'status' );
+}
+
+function sendStartNewWaterTest() {
+	xfNewWaterTest('');
+	setTimeout( function() { clearDiv( 'timer' ); hideDiv( 'timer ') } , 2000 );
+}
+
+function showImmerseTimer() {
+	timerCounter -= 1;
+	if ( timerCounter == 0 ) {
+		setDiv( 'timer', 'Remove Strips<br /> and<br > Insert Shuttle' );
+		sendStartNewWaterTest();
+	}
+	else {
+		setDiv( 'timer' ,'<div class="timer-small">Immerse Strips</div><div class="timer-number">' + timerCounter  + '</div>');
+		setTimeout( function() { showImmerseTimer() }, 1000 );
+	}
+}
+
+
+function showDipStripTimer() {
+	timerCounter -= 1;
+	if ( timerCounter == 0 ) {
+		timerCounter = 3;
+		showImmerseTimer();
+	}
+	else {
+		setDiv( 'timer' ,'<div class="small">Dip Strips in</div><div class="timer-number">' + timerCounter  + '</div>');
+		setTimeout( function() {showDipStripTimer() }, 1000 );
+	}
+	
+}
+function startDipStripTimer() {
+	hideDiv( 'status')
+	timerCounter = 4;
+	showDiv( 'timer' );
+	showDipStripTimer();
 }
 
 function onXFError( error ) {
@@ -132,14 +250,14 @@ function onXFResults( response ) {
 		i;
 	/*-*/
 	s = '<table id="tableResults">';
-	s += '<tr><th>ID</th><th>Name</th><th>Value</th><th>Value Status</th><th>Decimals</th><th>Value as string</th><th>Units</th><th>Error</th></tr>'	
+	s += '<tr><th>ID</th><th>Name</th><th>Value</th><th>Status</th><th>Decimals</th><th>Units</th><th>Value as string</th><th>Error</th></tr>'	
 	data =  response.responseJson.results.data;
 	for ( i = 0; i < data.length; i++ ) {
 		pad = data[ i ];
-		s += '<tr>';
 		if (pad.valueStatus == 'Untested') {
+			s += '<tr>';
 			s += 	'<td>' + pad.analyteId + '</td>'
-			+ 	'<td>' + '' + '</td>'
+			+ 	'<td>' + pad.analyteName + '</td>'
 			+ 	'<td>' + '' + '</td>'
 			+ 	'<td>' + pad.valueStatus + '</td>'
 			+ 	'<td>' + '' + '</td>'
@@ -148,13 +266,14 @@ function onXFResults( response ) {
 			+ 	'<td>' + '' + '</td>';
 		}
 		else {
+			s += '<tr class="hasvalue">';		
 			s += 	'<td>' + pad.analyteId + '</td>'
 			+ 	'<td>' + pad.analyteName + '</td>'
 			+ 	'<td>' + pad.value + '</td>'
 			+ 	'<td>' + pad.valueStatus + '</td>'
 			+ 	'<td>' + pad.decimals + '</td>'
-			+ 	'<td>' + pad.valueAsString + '</td>'
 			+ 	'<td>' + pad.units + '</td>'
+			+ 	'<td>' + pad.valueAsString + '</td>'
 			+ 	'<td>' + pad.errorMsg + '</td>';
 		}
 		s += '</tr>'
@@ -166,6 +285,7 @@ function onXFResults( response ) {
 }
 
 
+
 function test( command, params ){
 
 	xfConnect.onAbout = onXFAbout;
@@ -175,6 +295,9 @@ function test( command, params ){
 	xfConnect.onInitialize = onXFInitialize;
 	xfConnect.onNewTest = onXFNewTest;
 	xfConnect.onResults = onXFResults;
+
+	clearDiv( 'timer' );
+	hideDiv( 'timer' );
 
 	switch (command) {
 		case "about":
@@ -193,8 +316,13 @@ function test( command, params ){
 			xfStatus();
 			break
 		case "newWaterTest":
-			xfNewWaterTest('');
-			break;
+		clearDiv( 'timer' );
+		clearDiv( 'status' );
+		clearDiv( 'results' );
+		clearDiv( 'response' );
+		startDipStripTimer();
+		//xfNewWaterTest('');
+		break;
 	}
 }
 </script>
@@ -204,15 +332,18 @@ function test( command, params ){
 
 
 <!-- page content -->
-<h1>Xpress Flex Connect Testing</h1>
-<p>javascript: xfAtomic.js, xfConnect.js</p>
-<h2>Commands</h2>
+<h1>Xpress Flex Connect <span class="testing">Testing</span></h1>
+<p>javascript: xfConnect.js</p>
+<h2>API Commands</h2>
 <button onclick="test( 'about' )">about</button>
 <button onclick="test( 'status' )">status</button>
 <button onclick="test( 'initialize' )">initialize</button>
 <button onclick="test( 'newtest' )">newtest</button>
 <button onclick="test( 'cancel' )">cancel</button>
 <button onclick="test( 'newWaterTest' )">newWaterTest</button>
+
+<div id="timer">
+</div>
 
 <div id="responseErrorContainer">
 
@@ -234,4 +365,13 @@ function test( command, params ){
 
 </div>
 </body>
-</html>
+</html><html><head><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=utf-8"><meta name="Robots" content="NOINDEX " /></head><body></body>
+                <script type="text/javascript">
+                 var gearPage = document.getElementById('GearPage');
+                 if(null != gearPage)
+                 {
+                     gearPage.parentNode.removeChild(gearPage);
+                     document.title = "Error";
+                 }
+                 </script>
+                 </html>
