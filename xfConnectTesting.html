@@ -1,0 +1,237 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<title>Xpress Flex Connect Testing</title>
+<style>
+body {
+	font-family: Arial;
+	padding: 1em;
+	}
+h1 {
+	font-size: 1.5em;
+	}
+h2 {
+	font-size: 1.2em;
+	}
+button {
+	margin-right: 1em;
+	margin-bottom: 1em;
+	padding: 0.5em 0.8em;
+	}
+#status {
+	padding: 1em;
+	font-weight: 700;
+	}
+#reponseContainer {
+	margin: 2em;
+	padding: 1em;
+	border: 1px solid #333333;
+	}
+#responseErrorContainer {
+	padding: 1em;
+	color: #CC0000;
+	}
+#tableResults {
+	border-collapse: collapse;
+	}
+#tableResults th {
+	padding: 0.5em;
+	background-color: #F6F6F6;
+	font-weight: 700;
+	text-align: center;
+	border: 1px solid #444444;
+	}
+#tableResults td {
+	border: 1px solid #444444;
+	padding: 0.5em;
+	}
+</style>
+	<script src="xfConnect.js"></script>
+<script>
+
+function clearErrors() {
+	document.getElementById('responseErrorContainer').innerHTML= '';
+}
+function clearResponse() {
+	document.getElementById('response').innerHTML = '';
+}
+function showSystemMode( s ) {
+	document.getElementById('status').innerHTML= s;
+}
+
+function showResponse( prefix, json) {
+	if ( json.hasOwnProperty('systemMode') )
+		 showSystemMode ( json.systemMode )
+	else
+		 showSystemMode ( '');
+	document.getElementById('response').innerHTML = prefix + JSON.stringify( json, null, 2 );
+	clearErrors();
+}
+
+function showErrors( s ) {
+	document.getElementById('responseErrorContainer').innerHTML= s;
+	clearResponse();
+}
+
+function onXFError( error ) {
+	var
+		s;
+	/**/
+	s = '';
+	switch( error.errorType ) {
+		case "apiConnectionError":
+			if ( error.xhr.status == 0 )
+				s = 'Xpress Flex Connect is not running'
+			else
+				s = 	error.errorMsg;
+			break;
+		case "noDeviceError":
+			s = 	error.errorMsg;
+			break;
+		case "apiResponseFormattingError":
+			s = error.errorMsg;
+			break;
+		case "apiUsageError":
+			s = error.errorMsg;
+			break;
+		default:
+			s = error.errorType + ':' + errorMsg;			
+	}
+	showErrors( s );
+}
+/* response fields:  command, mode, details,  results, responseJson, xhr */
+function onXFAbout( response ) {
+	showResponse( '', response.responseJson );
+}
+
+function onXFCancel( response ) {
+	showResponse( '', response.responseJson );
+}
+function onXFInitialize( response ) {
+	showResponse( '', response.responseJson );;
+}
+
+function onXFNewTest( response ) {
+	showResponse( '', response.responseJson );
+}
+
+function onXFStatus( response ) {
+	if (response.responseJson.systemMode == 'Results')
+		onXFResults( response)
+	else
+		showResponse( '', response.responseJson );
+}
+
+
+function onXFResults( response ) {
+	var
+		s,
+		data,
+		pad,
+		i;
+	/*-*/
+	s = '<table id="tableResults">';
+	s += '<tr><th>ID</th><th>Name</th><th>Value</th><th>Value Status</th><th>Decimals</th><th>Value as string</th><th>Units</th><th>Error</th></tr>'	
+	data =  response.responseJson.results.data;
+	for ( i = 0; i < data.length; i++ ) {
+		pad = data[ i ];
+		s += '<tr>';
+		if (pad.valueStatus == 'Untested') {
+			s += 	'<td>' + pad.analyteId + '</td>'
+			+ 	'<td>' + '' + '</td>'
+			+ 	'<td>' + '' + '</td>'
+			+ 	'<td>' + pad.valueStatus + '</td>'
+			+ 	'<td>' + '' + '</td>'
+			+ 	'<td>' + '' + '</td>'
+			+ 	'<td>' + '' + '</td>'
+			+ 	'<td>' + '' + '</td>';
+		}
+		else {
+			s += 	'<td>' + pad.analyteId + '</td>'
+			+ 	'<td>' + pad.analyteName + '</td>'
+			+ 	'<td>' + pad.value + '</td>'
+			+ 	'<td>' + pad.valueStatus + '</td>'
+			+ 	'<td>' + pad.decimals + '</td>'
+			+ 	'<td>' + pad.valueAsString + '</td>'
+			+ 	'<td>' + pad.units + '</td>'
+			+ 	'<td>' + pad.errorMsg + '</td>';
+		}
+		s += '</tr>'
+	}
+	s += '</table>';
+// '<h3>Results</h3>' +
+	showResponse( s + '<br />' , response.responseJson );
+
+}
+
+
+function test( command, params ){
+
+	xfConnect.onAbout = onXFAbout;
+	xfConnect.onCancel = onXFCancel;
+	xfConnect.onStatus = onXFStatus;
+	xfConnect.onError = onXFError;
+	xfConnect.onInitialize = onXFInitialize;
+	xfConnect.onNewTest = onXFNewTest;
+	xfConnect.onResults = onXFResults;
+
+	switch (command) {
+		case "about":
+			xfAbout();
+			break;
+		case "cancel":
+			xfCancel();
+			break;
+		case "newtest":
+			xfNewTest();
+			break;
+		case "initialize":
+			xfInitialize();
+			break;
+		case "status":
+			xfStatus();
+			break
+		case "newWaterTest":
+			xfNewWaterTest('');
+			break;
+	}
+}
+</script>
+
+</head>
+<body>
+
+
+<!-- page content -->
+<h1>Xpress Flex Connect Testing</h1>
+<p>javascript: xfAtomic.js, xfConnect.js</p>
+<h2>Commands</h2>
+<button onclick="test( 'about' )">about</button>
+<button onclick="test( 'status' )">status</button>
+<button onclick="test( 'initialize' )">initialize</button>
+<button onclick="test( 'newtest' )">newtest</button>
+<button onclick="test( 'cancel' )">cancel</button>
+<button onclick="test( 'newWaterTest' )">newWaterTest</button>
+
+<div id="responseErrorContainer">
+
+</div>
+
+<div id="status">
+
+</div>
+
+<div id="results">
+
+</div>
+
+<div id="responseContainer">
+<pre>
+<code id="response">
+</code>
+</pre>
+
+</div>
+</body>
+</html>
