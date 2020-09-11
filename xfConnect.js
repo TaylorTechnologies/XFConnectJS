@@ -156,7 +156,12 @@ function xfNewWaterTest( stripLotParams ) {
 										setTimeout( waitForResults, 	xfConnect.statusPollIntervalMs );
 									}
 								}	
-							);
+						).catch(
+							function (error) {
+								if (xfConnect.onError != null)
+									xfConnect.onError(error);
+							}
+						);
 						} ) ();				
 					}
 				);	
