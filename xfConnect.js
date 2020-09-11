@@ -128,6 +128,8 @@ function xfNewWaterTest( stripLotParams ) {
 	if ( xfConnect.statusPollIntervalMs < 500)
 		xfConnect.statusPollIntervalMs = 1000;
 		
+	requestInProgress = true;
+
 	xfConnect.initialize()
 		.then(
 			function( initialize_Resolve_Response ) {
@@ -149,11 +151,13 @@ function xfNewWaterTest( stripLotParams ) {
 									}
 									else {
 										/* call client defined event handles for intermediate status requests (if assigned)*/
-										if ( xfConnect.onStatus != null) {
-											/* call event handler for intermediate status requests */
-											xfConnect.doOnStatus( status_Resolve_Response );
-										}	
-										setTimeout( waitForResults, 	xfConnect.statusPollIntervalMs );
+										if (requestInProgress === true){
+											if ( xfConnect.onStatus !== null ) {
+												/* call event handler for intermediate status requests */
+												xfConnect.doOnStatus( status_Resolve_Response );
+											}	
+											setTimeout( waitForResults, 	xfConnect.statusPollIntervalMs );
+										};
 									}
 								}	
 						).catch(
@@ -374,6 +378,7 @@ function XFConnect() {
 	function doOnCancel( response ) {
 		if ( this.onCancel != null ) {
 			try {
+				requestInProgress = false;
 				xfConnect.onCancel( response );
 			}
 			catch( ex ) {
@@ -434,12 +439,13 @@ function XFConnect() {
 	/*XFConnect*/	
 	function doOnStatus( response ) {
 		try {
-			if (response.systemMode == 'Results') {
+			if (response.systemMode === 'Results') {
+				requestInProgress = false;
 				if ( this.onResults != null )
 					xfConnect.onResults( response );
 			}
 			else {	
-				if ( this.onStatus != null )
+				if ( this.onStatus !== null && requestInProgress === true )
 					xfConnect.onStatus( response );
 			}		
 		}
