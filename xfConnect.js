@@ -1,43 +1,49 @@
-/* xfConnect.js v001 */
+/* xfConnect.js v004 */
 
 /* usage 
 
-	xfConnect.animationInClient = true |false;	 ( default false )
+	xfConnect.animationInClient = true |false;	 ( default: true )
 
-	xfConnect.apiPort = integer  1024 through 65535 (recommend above 60000 default 61264);
+	xfConnect.apiPort = integer  1024 through 65535 (recommend above 60000, default 61264);
 
-	xfConnect.statusPollIntervalMs = 0 auto polling off,  or 500 .. 2000 for automatic status requests after newtest (until error or results)
+	xfConnect.statusPollIntervalMs = 0 means auto polling is off,  or 500 .. 2000 for automatic status requests after newtest (until error or results) default: 1000
 
-set event handlers
-	xfConnect.onAbout = 	
-	xfConnect.onError =  
-	xfConnect.onInitialize = 
-	xfConnect.onNewTest
-	xfConnect.onResults = 
-	xfConnect.onStatus =  
+Either 
+	Set only 2 event handlers:
+		xfConnect.onError =  
+		xfConnect.onSuccess =
+OR 
+	Set all event handlers:
+		xfConnect.onAbout = 	
+		xfConnect.onError =  
+		xfConnect.onInitialize = 
+		xfConnect.onInventory = 
+		xfConnect.onNewTest
+		xfConnect.onResults = 
+		xfConnect.onStatus =  
 
-	xfConnect.onLogRequestURL=
-	
-	xfConnect.about();
-	xfConnect.initialize();
-	xfConnect.newtest();
-	xfConnect.status();
-	xfConnect.cancel();
+Logging event for development:
+		xfConnect.onLogRequestURL=
 
-	xfAbout()
-	xfCancel()	
-	xfInitialize()
-	xfNewTest()
-	xfNewWaterTest()
-	xfStatus()
-	
+Low level API methods:
+		xfConnect.about();
+		xfConnect.initialize();
+		xfConnect.inventory();
+		xfConnect.newtest();
+		xfConnect.status();
+		xfConnect.cancel();
 
-	stripsAndLots = '7Way=B1234&PO4=K3456'	
-
+High level function:
+		xfAbout()
+		xfCancel()	
+		xfInitialize()
+		xfInventory( params )
+		xfNewTest( params )
+		xfNewWaterTest()
+		xfStatus()
+		xfUpdate()
 
 usage:
-
-
 
 	response	 {
 								command: xfCommand,
@@ -48,7 +54,7 @@ usage:
 								xhr: atomicResponse.xhr
 	
 	error 		 {
-								xfCommand,
+								command: xfCommand,
 								deviceConnected: true| false,
 								errorType: "apiConnectionError| etc",
 								errorCode: 999,
@@ -56,13 +62,10 @@ usage:
 								responseJson: null,
 								xhr: xhrObject
 						}	
-
-================================================
-
 */
 
 /* systemMode:  NoDevice | ReadyHidden | ReadyVisible | PrepareToDip | Dipping |
-		InsertingShuttle | Analyzing | Results | UpdatingFirmware | UnexpectedError */	
+		InsertingShuttle | InsertingShuttle_NotInYet | Analyzing | Results | UpdatingFirmware | UnexpectedError */	
 		
 
 
@@ -74,13 +77,15 @@ function xfAbout() {
 			}
 		)
 		.catch( 
-			function(  error ) {		
+			function(  error ) {
 				xfConnect.doOnError( error );
 			}
 		);
 }
 
 function xfCancel() {
+	if ( xfConnect.newWaterTestInProgress ) 
+		xfConnect.newWaterTestCancelled = true;
 	xfConnect.cancel()
 		.then( 
 			function( cancel_Response ) {
@@ -93,7 +98,6 @@ function xfCancel() {
 			}
 		);
 }
-
 
 function xfInitialize() {
 	xfConnect.initialize()
@@ -109,8 +113,22 @@ function xfInitialize() {
 		);
 }
 
+function xfInventory( params ) {
+	xfConnect.inventory(  params )
+		.then( 
+			function( inventory_Response ) {
+				xfConnect.doOnInventory( inventory_Response );
+			}
+		)
+		.catch( 
+			function(  error ) {		
+				xfConnect.doOnError( error );
+			}
+		);
+}
+
 function xfNewTest() {
-	xfConnect.newtest()
+	xfConnect.newtest( params )
 		.then( 
 			function( newtest_Response ) {
 				xfConnect.doOnNewTest( newtest_Response );
@@ -123,23 +141,24 @@ function xfNewTest() {
 		);
 }
 
-function xfNewWaterTest( stripLotParams ) {
+function xfNewWaterTest( params ) {
 	
-	if ( xfConnect.statusPollIntervalMs < 500)
+	xfConnect.newWaterTestCancelled = false;	
+	xfConnect.newWaterTestInProgress = true;
+	
+	if ( xfConnect.statusPollIntervalMs < 500 )
 		xfConnect.statusPollIntervalMs = 1000;
 		
-	requestInProgress = true;
-
 	xfConnect.initialize()
 		.then(
 			function( initialize_Resolve_Response ) {
-				/* ignore initialize_Response because if here, system is initialized and ready*/	
-				return xfConnect.newtest( stripLotParams );
+				/* ignore initialize_Resolve_Response because if here, then system is initialized and ready */	
+				return xfConnect.newtest( params );
 			}	
 		)		
 		.then(
 			function( newtest_Resolve_Response ) {
-				/* ignore newtest_Response, because if here, newtest started without errors */	
+				/* ignore newtest_Resolve_Response, because if here, then newtest started without errors */	
 				return new Promise ( function ( resolve, reject ) {
 					( function waitForResults() {
 						
@@ -147,25 +166,23 @@ function xfNewWaterTest( stripLotParams ) {
 							.then(
 								function ( status_Resolve_Response ) {
 									if ( status_Resolve_Response.mode == 'Results') {
-										return resolve(	 status_Resolve_Response );
+										xfConnect.newWaterTestInProgress = false;
+										return resolve( status_Resolve_Response );
 									}
 									else {
-										/* call client defined event handles for intermediate status requests (if assigned)*/
-										if (requestInProgress === true){
-											if ( xfConnect.onStatus !== null ) {
-												/* call event handler for intermediate status requests */
-												xfConnect.doOnStatus( status_Resolve_Response );
-											}	
-											setTimeout( waitForResults, 	xfConnect.statusPollIntervalMs );
-										};
+										if ( xfConnect.newWaterTestCancelled ) {
+											xfConnect.newWaterTestCancelled = false;	
+											xfConnect.newWaterTestInProgress = false;
+											return resolve( status_Resolve_Response );
+										}
+										else {
+											/* call client defined event handler (if assigned) for intermediate status requests */
+											xfConnect.doOnStatus( status_Resolve_Response );
+											setTimeout( waitForResults, xfConnect.statusPollIntervalMs );
+										}
 									}
 								}	
-						).catch(
-							function (error) {
-								if (xfConnect.onError != null)
-									xfConnect.onError(error);
-							}
-						);
+							);
 						} ) ();				
 					}
 				);	
@@ -174,14 +191,17 @@ function xfNewWaterTest( stripLotParams ) {
 		.then( 
 			function( status_Response ) {
 				/* code to handle status_Response.results here */
-				if ( xfConnect.onResults != null )
-					xfConnect.onResults( status_Response );
+				if ( status_Response.mode == 'Results')
+					xfConnect.doOnResults( status_Response )
+				else
+					xfConnect.doOnStatus( status_Response );
 			}
 		)	
 		.catch(
 			function(  error ) {
-				if ( xfConnect.onError != null )
-					xfConnect.onError( error );
+				xfConnect.newWaterTestCancelled = false;	
+				xfConnect.newWaterTestInProgress = false;
+				xfConnect.doOnError( error );
 			}
 		);
  }
@@ -198,43 +218,69 @@ function xfStatus() {
 				xfConnect.doOnError( error );
 			}
 		);
-}	
+}
+
+function xfUpdate() {
+	xfConnect.update()
+		.then( 
+			function( update_Response ) {
+				xfConnect.doOnUpdate( update_Response );
+			}
+		)
+		.catch( 
+			function(  error ) {		
+				xfConnect.doOnError( error );
+			}
+		);
+}
 	
 function XFConnect() {
 	/*private properties*/
+	this.newWatertestCancelled = false;
+	this.newWaterTestInProgress = false;
 	this.requestInProgress = false;
 	this.timeoutInProgress = null;
 	/*public properties*/
-	this.animationInClient = false;
+	this.animationInClient = true;
 	this.apiPort = 61264;
 	this.statusPollIntervalMs = 0; /* 0 - auto polling off, else 500 .. 2000 ms auto status polling after newtest*/
+	this.version = '003';
 	/* private methods*/
 	this.checkResponse = checkResponse;
 	this.doOnAbout = doOnAbout;
 	this.doOnCancel = doOnCancel;
 	this.doOnError = doOnError;
 	this.doOnInitialize = doOnInitialize;
+	this.doOnInventory = doOnInventory;
 	this.doOnLogRequestURL = doOnLogRequestURL;
 	this.doOnNewTest = doOnNewTest;
-	this.doOnStatus = doOnStatus;				
+	this.doOnResults = doOnResults;
+	this.doOnStatus = doOnStatus;
+	this.doOnSuccess = doOnSuccess;
+	this.doOnUpdate = doOnUpdate;	
 	this.getApiURL = getApiURL;
+	this.logEventHandlerError = logEventHandlerError;
 	this.sendXFRequest = sendXFRequest;
 	/*public methods*/
 	this.about = about;
 	this.cancel = cancel;
 	this.initialize = initialize;
+	this.inventory = inventory;
 	this.newtest = newtest;
 	this.status = status;
+	this.update = update;
 	/*puplic events*/
 	this.onAbout = null;
 	this.onCancel = null;
 	this.onError = null;
 	this.onInitialize = null;
+	this.onInventory = null;
 	this.onLogRequestURL = null;
 	this.onNewTest = null;
 	this.onResults = null;
 	this.onStatus = null;
-
+	this.onSuccess = null;
+	this.onUpdate = null;
 	/*
 	implementation
 	*/
@@ -244,7 +290,8 @@ function XFConnect() {
 		cFields_about = [ 'details' ],
 		cFields_about_details = [ 'softwareVersion','apiVersion','documentation','deviceName','deviceSeries',
 			'deviceSerialNo','deviceFirmware','animationAvailable','newFirmwareAvailable','newFirmwareVersion',
-			'exeName' ],
+			'exeName'],//,'flexStrips' ],
+		cFields_inventory_flexStrips = [ 'stripCodes', 'openBottleStripInventory' ],
 		cFields_status = [ 'results' ],
 		cFields_status_results = [ 'errorCode','errorMsg','strips', 'data' ];
 	/*XFConnect*/
@@ -259,7 +306,7 @@ function XFConnect() {
 	/*XFConnect*/			
 	function checkResponse( command, atomicResponse, error ) {
 		/*  
-			command is:  about | cancel | initialize | newtest | status	
+			command is:  about | cancel | initialize | inventory | newtest | status	
 			atomicResponse	 is:  { data: jsonOrText, xhr: xhrObject }  
 				data is EITHER JSON.parse(xhr.responseText) OR xhr.responseText if parse error,
 				xhrObject in the underlying XMLHttpRequest() object
@@ -331,6 +378,13 @@ function XFConnect() {
 							if ( ! allFieldsFound( cFields_about_details, json.details, missingFields ) )
 								setError( 'apiResponseFormattingError', 999, 'Fields for "details" missing from Response: ' + missingFields.fieldNames );
 							break;
+						case "inventory":
+							if ( ! json.hasOwnProperty( 'flexStrips' )  )
+								setError( 'apiResponseFormattingError',  999,  'Field "flexStrips" is missing from Response' )
+							else
+							if ( ! allFieldsFound( cFields_inventory_flexStrips, json.flexStrips, missingFields ) )
+								setError( 'apiResponseFormattingError', 999, 'Fields for "flexStrips" missing from Response: ' + missingFields.fieldNames );
+							break;	
 						case "cancel":
 							//;
 							break;
@@ -346,6 +400,9 @@ function XFConnect() {
 									setError(  'apiResponseFormattingError', 999, 'Fields for "results" missing from Response: ' + missingFields.fieldNames );
 							}		
 							break;
+						case "update":
+							//	
+							break;	
 						default:
 							setError(  'apiResponseFormattingError', 999, 'invalid XpressFlex system command in Response: ' + requestCommand );
 							break;
@@ -369,23 +426,23 @@ function XFConnect() {
 				xfConnect.onAbout( response );
 			}
 			catch( ex ) {
-				console.log( ex.message )
-				
+				this.logEventHandlerError( 'onAbout', ex.message );
 			}	
 		}
+		xfConnect.doOnSuccess( response );
 	}
 	/*XFConnect*/		
 	function doOnCancel( response ) {
 		if ( this.onCancel != null ) {
 			try {
-				requestInProgress = false;
 				xfConnect.onCancel( response );
 			}
 			catch( ex ) {
-				console.log( ex.message )
+				this.logEventHandlerError( 'onCancel', ex.message );
 				
 			}	
 		}	
+		xfConnect.doOnSuccess( response );
 	}
 	/*XFConnect*/	
 	function doOnError( error ) {
@@ -394,22 +451,33 @@ function XFConnect() {
 				xfConnect.onError( error );
 			}
 			catch( ex ) {
-				console.log( ex.message )
-				
+				this.logEventHandlerError( 'onError', ex.message );
 			}	
 		}
 	}
 	/*XFConnect*/	
 	function doOnInitialize( response ) {
-		if ( this.onError != null ) {
+		if ( this.onInitialize != null ) {
 			try {
 				xfConnect.onInitialize( response );
 			}
 			catch( ex ) {
-				console.log( ex.message )
-				
+				this.logEventHandlerError( 'onInitialize', ex.message );
 			}	
 		}
+		xfConnect.doOnSuccess( response );
+	}
+	/*XFConnect*/	
+	function doOnInventory( response ) {
+		if ( this.onInventory != null ) {
+			try {
+				xfConnect.onInventory( response );
+			}
+			catch( ex ) {
+				this.logEventHandlerError( 'onInventory', ex.message );
+			}	
+		}
+		xfConnect.doOnSuccess( response );
 	}
 	/*XFConnect*/	
 	function doOnLogRequestURL( command, url ) {
@@ -418,12 +486,10 @@ function XFConnect() {
 				xfConnect.onLogRequestURL( command, url );
 			}
 			catch( ex ) {
-				console.log( ex.message )
-				
+				this.logEventHandlerError( 'onLogRequest', ex.message );
 			}	
 		}
 	}
-	
 	/*XFConnect*/	
 	function doOnNewTest( response ) {
 		if ( this.onNewTest != null ) {
@@ -431,35 +497,84 @@ function XFConnect() {
 				xfConnect.onNewTest( response );
 			}
 			catch( ex ) {
-				console.log( ex.message )
-				
+				this.logEventHandlerError( 'onNewTest', ex.message );
 			}	
 		}
+		xfConnect.doOnSuccess( response );
+	}
+	/*XFConnect*/	
+	function doOnResults( response ) {
+		try {
+			if ( this.onResults != null )
+				xfConnect.onResults( response );
+		}
+		catch( ex ) {
+		this.logEventHandlerError( 'onResults', ex.message );
+		}	
+		xfConnect.doOnSuccess( response );
 	}
 	/*XFConnect*/	
 	function doOnStatus( response ) {
 		try {
-			if (response.systemMode === 'Results') {
-				requestInProgress = false;
+			if ( response.systemMode == 'Results') {
 				if ( this.onResults != null )
 					xfConnect.onResults( response );
 			}
 			else {	
-				if ( this.onStatus !== null && requestInProgress === true )
+				if ( this.onStatus != null )
 					xfConnect.onStatus( response );
 			}		
 		}
 		catch( ex ) {
 			console.log( ex.message )
 		}	
+		xfConnect.doOnSuccess( response );
+	}
+	/*XFConnect*/		
+	function doOnSuccess( response ) {
+		if ( this.onSuccess != null ) {
+			try {
+				xfConnect.onSuccess( response );
+			}
+			catch( ex ) {
+				logEventHandlerError( 'onSuccess', ex.message );
+			}	
+		}	
+	}
+	/*XFConnect*/	
+	function doOnUpdate( response ) {
+		if ( this.onUpdate != null ) {
+			try {
+				xfConnect.onUpdate( response );
+			}
+			catch( ex ) {
+				this.logEventHandlerError( 'onUpdate', ex.message );
+			}
+		}
+		xfConnect.doOnSuccess( response );
 	}
 	/*XFConnect*/	
 	function initialize() {
 		return this.sendXFRequest( 'initialize' );
 	}
 	/*XFConnect*/	
+	function inventory( params ) {
+		return this.sendXFRequest( 'inventory', params );
+	}
+	/*XFConnect*/
+	function logEventHandlerError( eventName, errorMsg ) {
+		console.log( 'Your assigned xfConnect.' + eventName + ' event-handler had an error:\n"' + errorMsg  + '"' );
+	}
+	/*XFConnect*/	
 	function newtest( params ) {
-		return this.sendXFRequest( 'newtest', params );
+		var
+			_params;
+		/*-*/	
+		_params = ( typeof params == 'undefined' ) ? '' : params;
+		if ( _params != '' )
+			_params += '&';
+		_params += 'xfConnect=' + this.version;
+		return this.sendXFRequest( 'newtest', _params );
 	}
 	/*XFConnect*/	
 	function status() {
@@ -507,7 +622,7 @@ function XFConnect() {
 								error.msg =  ex.fileName.split('\\').pop().split('/').pop() + ': line ' + ex.lineNumber + ':' + ex.message;
 							}
 							if ( error.code != 0 ) {
-//console.log('atomicResponse ' + JSON.stringify(atomicResponse))
+								//console.log('atomicResponse ' + JSON.stringify(atomicResponse))
 								reject(
 									{	command: xfCommand, 
 										errorType: error.type, 
@@ -587,7 +702,10 @@ function XFConnect() {
 		);
 		return p;
 	}
-
+	/*XFConnect*/	
+	function update() {
+		return this.sendXFRequest( 'update' );
+	}
 }
 
 var 
