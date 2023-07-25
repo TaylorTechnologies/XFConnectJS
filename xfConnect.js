@@ -1,49 +1,56 @@
-/* xfConnect.js v004 */
+/* xfConnect.js v006 */
 
-/* usage 
-
-	xfConnect.animationInClient = true |false;	 ( default: true )
+/* Usage: 
 
 	xfConnect.apiPort = integer  1024 through 65535 (recommend above 60000, default 61264);
-
 	xfConnect.statusPollIntervalMs = 0 means auto polling is off,  or 500 .. 2000 for automatic status requests after newtest (until error or results) default: 1000
+	xfConnect.version = version of xfConnect.js eg 006
 
-Either 
+Setting Event Handlers:
+
+Either
 	Set only 2 event handlers:
 		xfConnect.onError =  
 		xfConnect.onSuccess =
 OR 
 	Set all event handlers:
-		xfConnect.onAbout = 	
-		xfConnect.onError =  
-		xfConnect.onInitialize = 
-		xfConnect.onInventory = 
+		xfConnect.onAbout =
+		xfConnect.onError =
+		xfConnect.onInitialize =
+		xfConnect.onInventory =
 		xfConnect.onNewTest
-		xfConnect.onResults = 
-		xfConnect.onStatus =  
+		xfConnect.onRegistration =
+		xfConnect.onResults =
+		xfConnect.onStatus = 
 
-Logging event for development:
+Logging events for development:
+	Set event handler:
 		xfConnect.onLogRequestURL=
 
-Low level API methods:
-		xfConnect.about();
-		xfConnect.initialize();
-		xfConnect.inventory();
-		xfConnect.newtest();
-		xfConnect.status();
-		xfConnect.cancel();
+Low-level API methods:
 
-High level function:
-		xfAbout()
-		xfCancel()	
-		xfInitialize()
-		xfInventory( params )
+		xfConnect.about( );
+		xfConnect.registration( );
+		xfConnect.initialize( );
+		xfConnect.inventory( );
+		xfConnect.newtest( );
+		xfConnect.status( );
+		xfConnect.cancel( );
+		xfConnect.update( );
+		
+High level functions:
+
+		xfAbout( )
+		xfRegistration( [params] )
+		xfCancel( )	
+		xfInitialize( )
+		xfInventory( [params] )
 		xfNewTest( params )
-		xfNewWaterTest()
-		xfStatus()
-		xfUpdate()
+		xfNewWaterTest( params )
+		xfStatus( )
+		xfUpdate( )
 
-usage:
+Returned parameter format:
 
 	response	 {
 								command: xfCommand,
@@ -64,16 +71,21 @@ usage:
 						}	
 */
 
-/* systemMode:  NoDevice | ReadyHidden | ReadyVisible | PrepareToDip | Dipping |
-		InsertingShuttle | InsertingShuttle_NotInYet | Analyzing | Results | UpdatingFirmware | UnexpectedError */	
-		
-
-
-function xfAbout() {
-	xfConnect.about()
+/* systemMode:  
+		NoDevice | Ready | InsertingShuttle | InsertingShuttle_NotInYet | Analyzing | Results | UpdatingSoftware | UpdatingFirmware | ServiceRequired
+*/	
+					
+function xfAbout( ) {
+	xfConnect.about( )
 		.then( 
 			function( about_Response ) {
-				xfConnect.doOnAbout( about_Response );
+				xfConnect.apiVersionMax = ( about_Response.details.hasOwnProperty( 'apiVersionMax' ) ) ? about_Response.details.apiVersionMax : '1.0';
+				if ( xfConnect.apiVersion == xfConnect.apiVersionMax )
+					xfConnect.doOnAbout( about_Response )
+				else {
+					xfConnect.apiVersion = xfConnect.apiVersionMax;
+					xfAbout( );
+				}	
 			}
 		)
 		.catch( 
@@ -83,10 +95,10 @@ function xfAbout() {
 		);
 }
 
-function xfCancel() {
+function xfCancel( ) {
 	if ( xfConnect.newWaterTestInProgress ) 
 		xfConnect.newWaterTestCancelled = true;
-	xfConnect.cancel()
+	xfConnect.cancel( )
 		.then( 
 			function( cancel_Response ) {
 				xfConnect.doOnCancel( cancel_Response );
@@ -99,8 +111,8 @@ function xfCancel() {
 		);
 }
 
-function xfInitialize() {
-	xfConnect.initialize()
+function xfInitialize( ) {
+	xfConnect.initialize( )
 		.then( 
 			function( initialize_Response ) {
 				xfConnect.doOnInitialize( initialize_Response );
@@ -127,7 +139,7 @@ function xfInventory( params ) {
 		);
 }
 
-function xfNewTest() {
+function xfNewTest( params ) {
 	xfConnect.newtest( params )
 		.then( 
 			function( newtest_Response ) {
@@ -205,8 +217,22 @@ function xfNewWaterTest( params ) {
 			}
 		);
  }
-	
-function xfStatus() {
+
+function xfRegistration( params ) {
+	xfConnect.registration(  params )
+		.then( 
+			function( registration_Response ) {
+				xfConnect.doOnRegistration( registration_Response );
+			}
+		)
+		.catch( 
+			function(  error ) {		
+				xfConnect.doOnError( error );
+			}
+		);
+}
+
+function xfStatus( ) {
 	xfConnect.status()
 		.then( 
 			function( status_Response ) {
@@ -220,8 +246,8 @@ function xfStatus() {
 		);
 }
 
-function xfUpdate() {
-	xfConnect.update()
+function xfUpdate( ) {
+	xfConnect.update( )
 		.then( 
 			function( update_Response ) {
 				xfConnect.doOnUpdate( update_Response );
@@ -234,18 +260,19 @@ function xfUpdate() {
 		);
 }
 	
-function XFConnect() {
+function XFConnect( ) {
 	/*private properties*/
 	this.newWatertestCancelled = false;
 	this.newWaterTestInProgress = false;
 	this.requestInProgress = false;
 	this.timeoutInProgress = null;
 	/*public properties*/
-	this.animationInClient = true;
 	this.apiPort = 61264;
+	this.apiVersion = '1.0';
+	this.apiVersionMax = '1.0';
 	this.statusPollIntervalMs = 0; /* 0 - auto polling off, else 500 .. 2000 ms auto status polling after newtest*/
-	this.version = '003';
-	/* private methods*/
+	this.version = '006';
+	/*private methods*/
 	this.checkResponse = checkResponse;
 	this.doOnAbout = doOnAbout;
 	this.doOnCancel = doOnCancel;
@@ -254,6 +281,7 @@ function XFConnect() {
 	this.doOnInventory = doOnInventory;
 	this.doOnLogRequestURL = doOnLogRequestURL;
 	this.doOnNewTest = doOnNewTest;
+	this.doOnRegistration = doOnRegistration;
 	this.doOnResults = doOnResults;
 	this.doOnStatus = doOnStatus;
 	this.doOnSuccess = doOnSuccess;
@@ -267,6 +295,7 @@ function XFConnect() {
 	this.initialize = initialize;
 	this.inventory = inventory;
 	this.newtest = newtest;
+	this.registration = registration;
 	this.status = status;
 	this.update = update;
 	/*puplic events*/
@@ -277,6 +306,7 @@ function XFConnect() {
 	this.onInventory = null;
 	this.onLogRequestURL = null;
 	this.onNewTest = null;
+	this.onRegistration = null;
 	this.onResults = null;
 	this.onStatus = null;
 	this.onSuccess = null;
@@ -287,34 +317,45 @@ function XFConnect() {
 	const
 		cFields_shared = [ 'requestCommand','requestErrorCode','requestErrorMsg','deviceConnected',
 			'systemMode','systemErrorCode','systemErrorMsg' ],
+		cFields_shared_v2 = [ 'apiVersion','requestCommand','requestErrorCode','requestErrorMsg','deviceConnected',
+			'systemMode','systemErrorCode','systemErrorMsg' ],			
 		cFields_about = [ 'details' ],
 		cFields_about_details = [ 'softwareVersion','apiVersion','documentation','deviceName','deviceSeries',
 			'deviceSerialNo','deviceFirmware','animationAvailable','newFirmwareAvailable','newFirmwareVersion',
 			'exeName'],//,'flexStrips' ],
+		cFields_about_details_v2 = [ 'softwareVersion','deviceName','deviceSeries',
+			'deviceSerialNo','deviceFirmware','newDataAvailable','newDataVersion','newExeAvailable','newExeVersion',
+			'newFirmwareAvailable','newFirmwareVersion','exeName'],
 		cFields_inventory_flexStrips = [ 'stripCodes', 'openBottleStripInventory' ],
 		cFields_status = [ 'results' ],
 		cFields_status_results = [ 'errorCode','errorMsg','strips', 'data' ];
 	/*XFConnect*/
 	function getApiURL( apiCommand, params ) {
 		var
-			urlParams;
+			urlParams,
+			apiVer;
 		/*-*/
 		urlParams = ( typeof params == 'undefined' ) ? "" : params;
 		urlParams = ( params == "" ) ? "" : '?' + params;
-		return 'http://localhost:' + this.apiPort + '/xf2/v1/' + apiCommand + urlParams;
+		apiVer =  ( this.apiVersion == '2.0' ) ? 'v2' : 'v1';
+		//return 'http://localhost:' + this.apiPort + '/xf2/v1/' + apiCommand + urlParams;
+		return `http://localhost:${this.apiPort}/xf2/${apiVer}/${apiCommand}${urlParams}`;
 	}
 	/*XFConnect*/			
 	function checkResponse( command, atomicResponse, error ) {
 		/*  
-			command is:  about | cancel | initialize | inventory | newtest | status	
+			command is:  about | cancel | initialize | inventory | newtest | registration | status | update	
 			atomicResponse	 is:  { data: jsonOrText, xhr: xhrObject }  
-				data is EITHER JSON.parse(xhr.responseText) OR xhr.responseText if parse error,
-				xhrObject in the underlying XMLHttpRequest() object
+				data is EITHER JSON.parse( xhr.responseText ) OR xhr.responseText if parse error,
+				xhrObject is the underlying XMLHttpRequest() object
 			error is:  { type: "", code: 0, msg: "" }	
 		*/	
 		var
 			json,
+			apiVersion,
 			requestCommand,
+			fields_shared,
+			fields_about_details,
 			missingFields;
 		/**/	
 		function setError( type, code, msg ) {
@@ -344,8 +385,19 @@ function XFConnect() {
 			setError( 'apiResponseFormattingError', 800, 'Invalid json data received in response' )
 		else {
 			json = atomicResponse.data;
-			/* atomicResponse.jsonOrText is valid JSON */	
-			requestCommand = ( json.hasOwnProperty( 'requestCommand' ) ) ? json.requestCommand  :  'missing';
+			/* atomicResponse.jsonOrText is valid JSON */
+			apiVersion = ( json.hasOwnProperty( 'apiVersion' ) ) ? json.apiVersion : '1.0';
+			switch ( apiVersion ) {
+				case "1.0":
+					fields_shared = cFields_shared;
+					fields_about_details = cFields_about_details;
+					break;
+				case "2.0":
+					fields_shared = cFields_shared_v2;
+					fields_about_details = cFields_about_details_v2;
+					break;
+			}
+			requestCommand = ( json.hasOwnProperty( 'requestCommand' ) ) ? json.requestCommand : 'missing';
 			if ( requestCommand == 'missing' )
 				setError( 'apiResponseFormattingError',  999,  'Field "requestCommand" is missing from Response' )
 			else
@@ -353,7 +405,10 @@ function XFConnect() {
 				setError( 'apiResponseFormattingError',  999, 'Incorrect requestCommand in Response "' + requestCommand
 					+ '". Should be "' + command + '".')
 			else	
-			if ( ! allFieldsFound( cFields_shared, json, missingFields ) )
+			if ( ( json.requestErrorCode ) && ( json.requestErrorCode == 900 ) )
+				setError( 'Access Denied', 900,  json.requestErrorMsg ) /* v006*/
+			else	
+			if ( ! allFieldsFound( fields_shared, json, missingFields ) )
 				setError( 'apiResponseFormattingError', 999, 'Fields are missing from "' + command + '" Response: ' + missingFields.fieldNames )
 			else
 			if ( ! json.deviceConnected )
@@ -375,7 +430,7 @@ function XFConnect() {
 							if ( ! json.hasOwnProperty( 'details' )  )
 								setError( 'apiResponseFormattingError',  999,  'Field "details" is missing from Response' )
 							else
-							if ( ! allFieldsFound( cFields_about_details, json.details, missingFields ) )
+							if ( ! allFieldsFound( fields_about_details, json.details, missingFields ) )
 								setError( 'apiResponseFormattingError', 999, 'Fields for "details" missing from Response: ' + missingFields.fieldNames );
 							break;
 						case "inventory":
@@ -391,6 +446,10 @@ function XFConnect() {
 						case "newtest":
 							//
 							break;
+						case "registration":
+							if ( ! json.hasOwnProperty( 'registration' )  )
+								setError( 'apiResponseFormattingError',  999,  'Field "registration" is missing from Response' );
+							break;	
 						case "status":
 							if ( json.systemMode == 'Results' ) {
 								if ( ! json.hasOwnProperty( 'results' )  )
@@ -503,6 +562,18 @@ function XFConnect() {
 		xfConnect.doOnSuccess( response );
 	}
 	/*XFConnect*/	
+	function doOnRegistration( response ) {
+		if ( this.onRegistration != null ) {
+			try {
+				xfConnect.onRegistration( response );
+			}
+			catch( ex ) {
+				this.logEventHandlerError( 'onRegistration', ex.message );
+			}	
+		}
+		xfConnect.doOnSuccess( response );
+	}
+	/*XFConnect*/	
 	function doOnResults( response ) {
 		try {
 			if ( this.onResults != null )
@@ -577,6 +648,10 @@ function XFConnect() {
 		return this.sendXFRequest( 'newtest', _params );
 	}
 	/*XFConnect*/	
+	function registration( params ) {
+		return this.sendXFRequest( 'registration', params );
+	}
+	/*XFConnect*/	
 	function status() {
 		return this.sendXFRequest( 'status' );
 	}
@@ -648,7 +723,6 @@ function XFConnect() {
 											json.results = { available: false };
 										break;	
 									case "status":
-							
 										if ( json.systemMode == 'Results' ) {
 											json.details = { available: false };
 											json.results.available = true;
@@ -721,7 +795,7 @@ var
  * MIT License
  * https://github.com/cferdinandi/atomic
  
- 23-Jun-2020 modified for error to return xhr (Taylor Technologies, Inc.)
+ 23-Jun-2020 modified for error to return xhr (Taylor Water Technologies LLC)
  */
 
 (function (root, factory) {
@@ -898,7 +972,7 @@ var
 						status: request.status,
 						statusText: request.statusText,
 						responseText : ( request.hasOwnProperty('responseText')) ? request.responseText : '',
-						xhr: request /* 23-Jun-2020 Taylor Technologies,Inc.*/
+						xhr: request /* 23-Jun-2020 Taylor Water Technologies LLC*/
 					});
 				}
 
@@ -947,7 +1021,7 @@ var
 	};
 
 	/**
-	 * Instatiate Atomic
+	 * Instantiate Atomic
 	 * @param {String} url      The request URL
 	 * @param {Object} options  A set of options for the request [optional]
 	 */
